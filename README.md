@@ -8,7 +8,7 @@ As a [docker image](https://hub.docker.com/r/manatlan/pye) !
 
 Unittests(97%cov) + docs will come later
 
-### Using [docker-hub image]((https://hub.docker.com/r/manatlan/pye)) :
+### Using [docker-hub image](https://hub.docker.com/r/manatlan/pye) :
 
 #### Just try
 
