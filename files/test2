@@ -1,0 +1,7 @@
+import asyncio
+
+yield('<html><body><ul>')
+for number in range(1, 10 + 1):
+    yield '<li>%d</li>' % number
+    await asyncio.sleep(0.5)
+yield('</ul></body></html>')

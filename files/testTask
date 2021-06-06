@@ -1,0 +1,10 @@
+
+def X(nb):
+    print("*x"*nb)
+
+web.add_task(X,1)
+yield "ooo"
+web.add_task(X,2)
+yield "ooo"
+web.add_task(X,3)
+yield "ooo"

@@ -1,0 +1,15 @@
+
+@api.get("/xx/{item_id}")
+def read_item(item_id: int):
+    """ wwwwwwwwwwwwwwwwwwwwwwwwwwww """
+    return {"item_id": item_id,"isAdmin":23}
+
+@api.get("/x/{item_id}")
+def read_item2(item_id: int):
+    return {"item_id": item_id,"isAdmin":23}
+
+@api.get("/test")
+def read_item2():
+    return {"yo2": True}
+
+print("FastApi on /api/")

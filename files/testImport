@@ -1,0 +1,5 @@
+import FILES
+FILES.refresh()
+from FILES.websocket.lib import text
+
+print( text() )

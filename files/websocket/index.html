@@ -1,0 +1,27 @@
+<script>
+    var ws;
+    function wscnx(u,isBinary) {
+        ws=new WebSocket( u, isBinary?["base64"]:undefined );
+        ws.onopen  = function(evt){aff( "connected");}
+        ws.onclose  = function(evt){aff( "closed");}
+        ws.onerror = function(evt){aff( "error:"+evt); }
+        ws.onmessage = function(evt) {aff("RECEPT:"+evt.data)}
+    }
+
+    function send() {
+        ws.send( "toto" );
+    }
+
+    function aff(t) {
+        document.getElementById("r").innerHTML+="<li>"+t+"</li>"
+    }
+
+    function init() {
+        wscnx( window.location.origin.replace('http','ws') + '/websocket/my.ws',0)
+    }
+</script>
+
+<body onload="init()">
+    <button onclick="send()">Envoi 'toto'</button>
+    <div id="r"></div>
+</body>

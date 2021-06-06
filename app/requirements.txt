@@ -1,0 +1,16 @@
+pycryptodome
+google-cloud-datastore
+starlette
+fastapi
+gunicorn
+uvicorn[standard]
+vbuild
+redys
+pyyaml
+lxml
+python-dateutil
+python-multipart
+google-api-python-client
+#tempita
+#markdown2
+

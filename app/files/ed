@@ -1,0 +1,424 @@
+#*** GENERATED FILE ***
+__version__="3.2.2"
+
+# 3.2.2 compatible py3/async & py3/bottle
+
+# 3.1.4 bug fixed: switch
+
+# 3.1.2
+#       real switch cookie/ns (need new main.py)
+# 3.1.1:
+#       show/switch NS in root tree
+# 3.1.0:
+#       monofile
+#       ie11 compatibility
+#       v_ed dev with components on alwaysdata
+# 3.02**
+#     - new themes
+# 3.01:
+#     - match brace always visible white/red
+#     - alt-P : switch original/python mode
+#     - autoclose bracket a false !
+# 3.0:
+#     codemirr->ace
+#     api py2/py3
+#     - ace->codemirror
+#     - downloadfile (api)
+#     - new keys
+#     - no more down/enter bugs
+#     - pane with no hscroll
+#     - python3/2 api
+#     - better match braces/tag
+#     - ctrl+g: go to line
+# 2.03: duplicate folder
+# 2.02: search -> scroll to line/row
+# 2.01:ed/api : with new dynamic call ! and postsave message -> message
+
+
+import zipfile
+
+try:                #python3
+    import urllib.request
+    import base64
+    import io
+    def toStr(x):
+        return str(x,"utf8")
+
+    def urlopen(url):
+        with urllib.request.urlopen(url) as r:
+            return r
+
+    def b64decode(data):
+        return base64.b64decode(data)   #-> bytes
+
+    def b64encode(data):
+        return toStr(base64.b64encode(data))
+
+    def bopen(data=b""):
+        return io.BytesIO(data)
+
+    def txtContent(type,content):
+        return content
+
+except ImportError: #python2
+    import urllib2
+    from StringIO import StringIO
+    def toStr(x):
+        return x
+
+    def urlopen(url):
+        return urllib2.urlopen(url)
+
+    def b64decode(data):
+        return data.decode("base64")
+
+    def b64encode(data):
+        return data.encode("base64")
+
+    def bopen(data=""):
+        return StringIO(data)
+
+    def txtContent(type,content):
+        if type and type.startswith("text/"):
+            return content.encode("utf8")
+        else:
+            return content
+
+
+class FS(Files):
+    def __init__(self):
+        ns=web.request.get_cookie("NS","")
+        if ns:
+            Files.__init__(self, ns)  # SUIVANT NAMESPACE !!!!
+        else:
+            Files.__init__(self)  # default ns
+
+    def join(self,a,b):
+        return a+"/"+b if a else b
+
+    def rename(self,old,new,control=True):
+        """ return True if the renaming was succesful (false if dest existed (depending of control))"""
+        if control:
+            all=self.list()
+            if not ((old in all) and (new not in all)):
+                return False
+
+        item=self.get(old)
+        if self.set(new,item["content"],item["type"],item["admin"]):
+            self.delete(old)
+            return True
+
+    def copy(self,f1,f2): #new 05/2018 (could be a rename without delete !)
+        item=self.get(f1)
+        self.set(f2,item["content"],item["type"],item["admin"])
+        return True
+
+    def copyFolder(self,f1,f2): #new 10/2018
+        for f in self.list(f1+"/*"):
+            self.copy(f,f2+f[len(f1):])
+        return True
+
+    def getFolder(self,folder):
+        """ return list of files under folder (absolute path)"""
+        folder=folder.strip("/")
+        return [i[len(folder)+1:] for i in self.list(folder+"/*")]
+
+    def deleteFolder(self,folder):
+        """ delete all files under folder, return true if at least one file was deleted"""
+        b=False
+        folder=folder.strip("/")
+        for i in self.getFolder(folder):
+            b=b | self.delete( self.join(folder,i) )
+        return b
+
+    def renameFolder(self,oldFolder,newFolder):
+        """ rename folder (absolute path), returns true if it was possible"""
+        ll=[]
+
+        oldFolder=oldFolder.strip("/")
+        newFolder=newFolder.strip("/")
+        for i in self.getFolder(oldFolder):
+            ll.append( ( self.join(oldFolder,i), self.join(newFolder,i) ) )
+        if ll:
+            all=self.list()
+            for src,dst in ll:
+                if src not in all: return False
+                if dst in all: return False
+            for src,dst in ll:
+                self.rename(src,dst,False)
+            return True
+
+    def zipFolder(self,folder):
+        """create a 'folder'.zip from folder's files """
+        folder=folder.strip("/")
+
+        ll=self.getFolder(folder)
+        if ll:
+            f=bopen()
+            with zipfile.ZipFile(f, "w") as file:
+                for id in ll:
+                    item=self.get( self.join(folder,id) )
+                    if item:
+                        content=item["content"]
+                        dst=self.join(os.path.basename(folder),id)
+                        content=txtContent(item["type"],content)
+                        file.writestr(dst, content )
+
+            f.seek(0)
+
+            self.set(folder+".zip",f.read(),"application/zip",True) # create zip admin
+            return folder+".zip"
+
+    def unzipFile(self,file):
+        """ unzip the zip file in the current folder (those containing the zip)"""
+        ll=[]
+        item=self.get(file)
+        folder=os.path.dirname(file)
+        if item:
+            with zipfile.ZipFile(bopen(item["content"])) as zip:
+                for i in zip.namelist():
+                    f=self.join(folder,i)
+                    if not f.endswith("/"):
+                        self.set( f, zip.read(i), guessMimetype(i))
+                        ll.append(i)
+        return ll
+
+def decode(code):
+    """ decode un eventuel contenu encode en b64 """
+    if code and code.startswith("data:"):
+        head,data=code.split(",",1)
+        return b64decode(data)   # bytes !!!
+    else:
+        return code
+
+def searchInBuf(buf,pattern):
+    ''' recherche le 'pattern' dans le buffer 'buf' et retourne une liste
+        de dict (line/pos(x1,x2,y))
+    '''
+    ll=[]
+    for idx,line in enumerate(buf.splitlines()):
+        for i in re.finditer(pattern,line,re.I):
+            ll.append( dict(
+                    line=line,
+                    pos=dict(x1=i.regs[0][0],x2=i.regs[0][1],y=1+idx) ,
+            ))
+    return ll
+
+def search(pattern,filepattern=None):
+    ''' recherche le 'pattern' dans le 'filepattern' et retourne une liste
+        de dict (file/results)
+    '''
+    ll=[]
+    db=FS()
+    for i in db.list(filepattern):
+        if pattern:
+            if ".min." in i: continue # feature !
+            obj = db.get(i)
+            if obj["type"] and obj["type"].startswith("text/") and obj["content"]:
+                l=searchInBuf( obj["content"], pattern )
+                if l:
+                    ll.append( dict(
+                        file=i,
+                        results=l,
+                    ))
+        else:
+            ll.append( dict(
+                file=i,
+                results=[ dict(
+                    line="",
+                    pos=dict(x1=0,x2=0,y=1) ,
+                )],
+            ))
+    return ll
+
+def CALL_search(q,fn="*"):
+    return search(q,fn)
+
+def CALL_all():
+    db=FS()
+    return {
+        "files":db.list(),
+        "admins":db.list(admin=True),
+        "namespaces":Files.namespaces(),
+    }
+
+if "pye" in globals():
+    async def CALL_set(id,content):  # content can by base64's encoded (uploaded bin's files)
+        db=FS()
+        # return db.set(id.strip(),content=decode(content),type=type)
+        #=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
+        fileNameInDb=id.strip()
+        idSaveOk=db.set(fileNameInDb,content=decode(content))
+
+        msg=""
+        if fileNameInDb!="_POSTSAVE_":
+            objPostSave=db.get("_POSTSAVE_")
+            if objPostSave:
+                content=objPostSave["content"]
+                if content.strip():
+                    try:
+                        msg=(await dynamic( web.request, content,fileNameInDb,[],None)).body.decode()
+                    except Exception as e:
+                        msg="POSTSAVE EXCEPTION (%s)"%e
+
+        return dict(fileType=idSaveOk,postsave=msg)
+        #=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
+else:
+    #PY3/bottle
+    def CALL_set(id,content):  # content can by base64's encoded (uploaded bin's files)
+        db=FS()
+        # return db.set(id.strip(),content=decode(content),type=type)
+        #=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
+        fileNameInDb=id.strip()
+        idSaveOk=db.set(fileNameInDb,content=decode(content))
+
+        msg=""
+        if fileNameInDb!="_POSTSAVE_":
+            objPostSave=db.get("_POSTSAVE_")
+            if objPostSave:
+                content=objPostSave["content"]
+                if content.strip():
+                    try:
+                        msg=dynamic(content,fileNameInDb,[],None)
+                    except Exception as e:
+                        msg="POSTSAVE EXCEPTION (%s)"%e
+
+        return dict(fileType=idSaveOk,postsave=msg)
+        #=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
+
+
+
+def CALL_del(id):
+    db=FS()
+    return db.delete(id.strip())
+
+def CALL_get(id):
+    db=FS()
+    r=db.get(id.strip())
+    if r and (not r["type"].startswith("text/")):
+        # binary to base64
+        if r["content"]:
+            r["content"]="data:%s;base64,%s" % (r["type"],b64encode(r["content"]))
+    return r
+
+def CALL_toggleAdmin(id,admin):  # set just the admin access
+    db=FS()
+    db.set(id.strip(),admin=admin)
+    # time.sleep(0.1)
+    return db.list(admin=True)
+
+def returnAll(db):
+    # time.sleep(0.1)
+    return {
+        "files":db.list(),
+        "admins":db.list(admin=True),
+    }
+
+def CALL_rename(old,new):
+    db=FS()
+    if db.rename(old,new):
+        return returnAll(db)
+
+def CALL_copy(old,new):
+    db=FS()
+    if db.copy(old,new):
+        return returnAll(db)
+
+def CALL_copyFolder(old,new):
+    db=FS()
+    if db.copyFolder(old,new):
+        return returnAll(db)
+
+def CALL_deleteFolder(folder):
+    db=FS()
+    if db.deleteFolder(folder):
+        return returnAll(db)
+
+def CALL_renameFolder(old,new):
+    db=FS()
+    if db.renameFolder(old,new):
+        return returnAll(db)
+
+def CALL_zipFolder(folder):
+    db=FS()
+    if db.zipFolder(folder):
+        return returnAll(db)
+
+def CALL_unzipFile(file):
+    db=FS()
+    if db.unzipFile(file):
+        return returnAll(db)
+
+def CALL_downloadFile(url,path):
+    db=FS()
+    if "|" in url:
+        url,name=url.rsplit("|",1)
+    else:
+        name=os.path.basename(url)
+    r=urlopen(url)
+    #r.headers.get("Content-Type",None)
+    db.set( db.join(path,name),r.read() )
+    return returnAll(db)
+
+
+def tests():
+    x=b64encode(b"jo")
+    xx=b64decode(x)
+
+    assert type(b"jo")==type(xx)
+    assert xx==b"jo"
+
+    r=urlopen("https://manatlan.com")
+    assert hasattr(r,"read")
+
+    r=bopen()
+    assert hasattr(r,"read")
+    assert r.read()==b""
+
+    r=bopen(b"x")
+    assert hasattr(r,"read")
+    assert r.read()==b"x"
+
+    x=toStr(b"xxx")
+    assert x==str("xxx")
+
+    content=txtContent("text/",u"jojjo")
+    assert type(content)==str
+
+    content=txtContent("text/","jojjo")
+    assert type(content)==str
+
+
+##############################################################################
+
+if web.request.method=="POST":
+    scope=locals()
+    try:
+        try:
+            datas=json.loads(web.request.body.read())   #py27 & py37
+        except:
+            datas=json.loads(str(web.request.body.read(),"utf8")) #py35
+
+        method=list(datas.keys())[0]
+        r= scope["CALL_"+method]( **datas[method] )
+        if asyncio.iscoroutine(r): r=await r
+        return {"result": r }
+    except Exception as e:
+        import traceback
+        return {"error":traceback.format_exc(),"url":hasattr(e,"url") and getattr(e,"url") or "?"}
+elif web.request.method=="GET":
+    if argv and argv[0]=="polyfill.js":
+        web.response.content_type="text/javascript; charset=utf-8"
+        # polyfill "Promise + fetch" (works on ie11)
+        return """!function(a){function b(a,b){return function(){a.apply(b,arguments)}}function c(a){if("object"!=typeof this)throw new TypeError("Promises must be constructed via new");if("function"!=typeof a)throw new TypeError("not a function");this._state=null,this._value=null,this._deferreds=[],i(a,b(e,this),b(f,this))}function d(a){var b=this;return null===this._state?void this._deferreds.push(a):void j(function(){var c=b._state?a.onFulfilled:a.onRejected;if(null===c)return void(b._state?a.resolve:a.reject)(b._value);var d;try{d=c(b._value)}catch(e){return void a.reject(e)}a.resolve(d)})}function e(a){try{if(a===this)throw new TypeError("A promise cannot be resolved with itself.");if(a&&("object"==typeof a||"function"==typeof a)){var c=a.then;if("function"==typeof c)return void i(b(c,a),b(e,this),b(f,this))}this._state=!0,this._value=a,g.call(this)}catch(d){f.call(this,d)}}function f(a){this._state=!1,this._value=a,g.call(this)}function g(){for(var a=0,b=this._deferreds.length;b>a;a++)d.call(this,this._deferreds[a]);this._deferreds=null}function h(a,b,c,d){this.onFulfilled="function"==typeof a?a:null,this.onRejected="function"==typeof b?b:null,this.resolve=c,this.reject=d}function i(a,b,c){var d=!1;try{a(function(a){d||(d=!0,b(a))},function(a){d||(d=!0,c(a))})}catch(e){if(d)return;d=!0,c(e)}}var j="function"==typeof setImmediate&&setImmediate||function(a){setTimeout(a,1)},k=Array.isArray||function(a){return"[object Array]"===Object.prototype.toString.call(a)};c.prototype["catch"]=function(a){return this.then(null,a)},c.prototype.then=function(a,b){var e=this;return new c(function(c,f){d.call(e,new h(a,b,c,f))})},c.all=function(){var a=Array.prototype.slice.call(1===arguments.length&&k(arguments[0])?arguments[0]:arguments);return new c(function(b,c){function d(f,g){try{if(g&&("object"==typeof g||"function"==typeof g)){var h=g.then;if("function"==typeof h)return void h.call(g,function(a){d(f,a)},c)}a[f]=g,0===--e&&b(a)}catch(i){c(i)}}if(0===a.length)return b([]);for(var e=a.length,f=0;f<a.length;f++)d(f,a[f])})},c.resolve=function(a){return a&&"object"==typeof a&&a.constructor===c?a:new c(function(b){b(a)})},c.reject=function(a){return new c(function(b,c){c(a)})},c.race=function(a){return new c(function(b,c){for(var d=0,e=a.length;e>d;d++)a[d].then(b,c)})},c._setImmediateFn=function(a){j=a},"undefined"!=typeof module&&module.exports?module.exports=c:a.Promise||(a.Promise=c)}(this);
+!function(){"use strict";function t(t){if("string"!=typeof t&&(t=String(t)),/[^a-z0-9\-#$%&'*+.\^_`|~]/i.test(t))throw new TypeError("Invalid character in header field name");return t.toLowerCase()}function e(t){return"string"!=typeof t&&(t=String(t)),t}function r(t){this.map={},t instanceof r?t.forEach(function(t,e){this.append(e,t)},this):t&&Object.getOwnPropertyNames(t).forEach(function(e){this.append(e,t[e])},this)}function o(t){return t.bodyUsed?Promise.reject(new TypeError("Already read")):void(t.bodyUsed=!0)}function n(t){return new Promise(function(e,r){t.onload=function(){e(t.result)},t.onerror=function(){r(t.error)}})}function s(t){var e=new FileReader;return e.readAsArrayBuffer(t),n(e)}function i(t){var e=new FileReader;return e.readAsText(t),n(e)}function a(){return this.bodyUsed=!1,this._initBody=function(t){if(this._bodyInit=t,"string"==typeof t)this._bodyText=t;else if(p.blob&&Blob.prototype.isPrototypeOf(t))this._bodyBlob=t;else if(p.formData&&FormData.prototype.isPrototypeOf(t))this._bodyFormData=t;else if(t){if(!p.arrayBuffer||!ArrayBuffer.prototype.isPrototypeOf(t))throw new Error("unsupported BodyInit type")}else this._bodyText=""},p.blob?(this.blob=function(){var t=o(this);if(t)return t;if(this._bodyBlob)return Promise.resolve(this._bodyBlob);if(this._bodyFormData)throw new Error("could not read FormData body as blob");return Promise.resolve(new Blob([this._bodyText]))},this.arrayBuffer=function(){return this.blob().then(s)},this.text=function(){var t=o(this);if(t)return t;if(this._bodyBlob)return i(this._bodyBlob);if(this._bodyFormData)throw new Error("could not read FormData body as text");return Promise.resolve(this._bodyText)}):this.text=function(){var t=o(this);return t?t:Promise.resolve(this._bodyText)},p.formData&&(this.formData=function(){return this.text().then(f)}),this.json=function(){return this.text().then(JSON.parse)},this}function u(t){var e=t.toUpperCase();return c.indexOf(e)>-1?e:t}function h(t,e){e=e||{};var o=e.body;if(h.prototype.isPrototypeOf(t)){if(t.bodyUsed)throw new TypeError("Already read");this.url=t.url,this.credentials=t.credentials,e.headers||(this.headers=new r(t.headers)),this.method=t.method,this.mode=t.mode,o||(o=t._bodyInit,t.bodyUsed=!0)}else this.url=t;if(this.credentials=e.credentials||this.credentials||"omit",(e.headers||!this.headers)&&(this.headers=new r(e.headers)),this.method=u(e.method||this.method||"GET"),this.mode=e.mode||this.mode||null,this.referrer=null,("GET"===this.method||"HEAD"===this.method)&&o)throw new TypeError("Body not allowed for GET or HEAD requests");this._initBody(o)}function f(t){var e=new FormData;return t.trim().split("&").forEach(function(t){if(t){var r=t.split("="),o=r.shift().replace(/\+/g," "),n=r.join("=").replace(/\+/g," ");e.append(decodeURIComponent(o),decodeURIComponent(n))}}),e}function d(t){var e=new r,o=t.getAllResponseHeaders().trim().split("\\n");return o.forEach(function(t){var r=t.trim().split(":"),o=r.shift().trim(),n=r.join(":").trim();e.append(o,n)}),e}function l(t,e){e||(e={}),this._initBody(t),this.type="default",this.status=e.status,this.ok=this.status>=200&&this.status<300,this.statusText=e.statusText,this.headers=e.headers instanceof r?e.headers:new r(e.headers),this.url=e.url||""}if(!self.fetch){r.prototype.append=function(r,o){r=t(r),o=e(o);var n=this.map[r];n||(n=[],this.map[r]=n),n.push(o)},r.prototype["delete"]=function(e){delete this.map[t(e)]},r.prototype.get=function(e){var r=this.map[t(e)];return r?r[0]:null},r.prototype.getAll=function(e){return this.map[t(e)]||[]},r.prototype.has=function(e){return this.map.hasOwnProperty(t(e))},r.prototype.set=function(r,o){this.map[t(r)]=[e(o)]},r.prototype.forEach=function(t,e){Object.getOwnPropertyNames(this.map).forEach(function(r){this.map[r].forEach(function(o){t.call(e,o,r,this)},this)},this)};var p={blob:"FileReader"in self&&"Blob"in self&&function(){try{return new Blob,!0}catch(t){return!1}}(),formData:"FormData"in self,arrayBuffer:"ArrayBuffer"in self},c=["DELETE","GET","HEAD","OPTIONS","POST","PUT"];h.prototype.clone=function(){return new h(this)},a.call(h.prototype),a.call(l.prototype),l.prototype.clone=function(){return new l(this._bodyInit,{status:this.status,statusText:this.statusText,headers:new r(this.headers),url:this.url})},l.error=function(){var t=new l(null,{status:0,statusText:""});return t.type="error",t};var y=[301,302,303,307,308];l.redirect=function(t,e){if(-1===y.indexOf(e))throw new RangeError("Invalid status code");return new l(null,{status:e,headers:{location:t}})},self.Headers=r,self.Request=h,self.Response=l,self.fetch=function(t,e){return new Promise(function(r,o){function n(){return"responseURL"in i?i.responseURL:/^X-Request-URL:/m.test(i.getAllResponseHeaders())?i.getResponseHeader("X-Request-URL"):void 0}var s;s=h.prototype.isPrototypeOf(t)&&!e?t:new h(t,e);var i=new XMLHttpRequest;i.onload=function(){var t=1223===i.status?204:i.status;if(100>t||t>599)return void o(new TypeError("Network request failed"));var e={status:t,statusText:i.statusText,headers:d(i),url:n()},s="response"in i?i.response:i.responseText;r(new l(s,e))},i.onerror=function(){o(new TypeError("Network request failed"))},i.open(s.method,s.url,!0),"include"===s.credentials&&(i.withCredentials=!0),"responseType"in i&&p.blob&&(i.responseType="blob"),s.headers.forEach(function(t,e){i.setRequestHeader(e,t)}),i.send("undefined"==typeof s._bodyInit?null:s._bodyInit)})},self.fetch.polyfill=!0}}();"""
+    else:
+
+        web.response.content_type="text/html; charset=utf-8"
+        h="""<!DOCTYPE html><html><head><title>A3d</title><meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta name="viewport" content="user-scalable=yes, width=device-width, initial-scale=1.0, maximum-scale=1.0"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-touch-fullscreen" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black"><meta name="theme-color" content="#333"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><link rel="icon" type="image/png" href="https://cdnjs.cloudflare.com/ajax/libs/fatcow-icons/20130425/FatCow_Icons32x32/application_side_list.png"><link rel="apple-touch-icon" href="https://cdnjs.cloudflare.com/ajax/libs/fatcow-icons/20130425/FatCow_Icons32x32/application_side_list.png"><link href="https://fonts.googleapis.com/css?family=Roboto+Mono" rel="stylesheet"><script src="/ed/polyfill.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.1/ace.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.1/ext-searchbox.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.1/ext-language_tools.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.5.17/vue.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/vuex/3.0.1/vuex.min.js"></script><style> * { box-sizing: border-box;} :focus {outline:none;} .noselect { -webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; } .click { cursor:pointer; } .selected { color:red; } .overhide { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap; } ::-webkit-scrollbar-track { background-color: #333; } ::-webkit-scrollbar { width: 7px; height:7px; } ::-webkit-scrollbar-thumb { background-color: #777; border: 1px solid #bbb; border-radius: 2px; } html,body { width:100%; height:100%; margin:0px; padding:0px; overflow:hidden; font-family: "Roboto Mono"; font-size:11px; } #app { display:flex; flex-flow:column nowrap; width:100%; height:100%; } #top { flex: 0 0 20px; } #search { flex: 1 0 auto; max-height:200px; overflow:auto; } #main { flex: 1 0 auto; display:flex; flex-flow:row nowrap; height:97vh; } #main .shrink { flex: 0 0 auto; overflow-y:auto; padding-bottom:20px; } #main .expand { flex: 1 1 auto; overflow-y:auto; padding-bottom:20px; } #bottom { flex: 1 1 100px; } .green { background:#6C6 !important; } .red { background:#C66 !important; } .blue { background:#88F!important; } a { text-decoration:none; color:white; font-weight:bold; text-shadow: 2px 2px 8px #000; } .button { display: inline-block; cursor: pointer; background:#98A697; color:white; border: 0 rgba(0, 0, 0, 0); border-radius: 2px; font-weight:bold; } .dropHighlight { background:yellow; } #back { position:fixed; left:0px; right:0px; top:0px; bottom:0px; background:#AAA; opacity:0.5; z-index:10000; display:none; } .fetching #back { display:block; } .backzone { background: rgba(0,0,0,0.12); } /**/ #app.small #main .shrink { flex: 0 0 100%; } #app.small div[folders] { font-size:1.5em; padding-bottom:40px; } #app.small div[config] { font-size:1.5em; padding-bottom:40px; } #app.small div#top .button { height:40px; width:40px; float:left; font-size:1.5em; } #app.small div#top a { font-size:1.3em; float:right; } #app.small div#top { flex: 0 1 40px; height:40px; } *[data-v_ed-affmsg] {position:fixed; padding:10px; right:4px; bottom: 0px; z-index:1000; background:black; color:white; font-size:12px; } .ace_gutter-cell.ace_breakpoint {background:red; color:white; } .ace_bracket {background:yellow; color:black !important; } .ficon {color:orange} *[data-v_ed-folders] {max-width:200px;overflow-x:auto;} #popmenu {background: ButtonFace; box-shadow: 0 2px 2px 0 rgba(0,0,0,.64); display: block; list-style: none; margin: 0; padding: 0; position: absolute; width: 200px; z-index: 999999; } #popmenu li {border-bottom: 1px solid #E0E0E0; color:black; margin: 0; padding: 5px 35px; cursor:pointer; } #popmenu li:last-child {border-bottom: none; } #popmenu li:hover {background: #1E88E5; color: #FAFAFA; } *[data-v_ed-tree] .tree {border-left: 1px solid orange; padding-left:3px; } *[data-v_ed-tree] .fopen {color:orange; } </style><script type="text/x-template" id="tpl-v_ed-affmsg"><pre data-v_ed-affmsg v-if="$store.state.message">{{$store.state.message}}</pre></script><script type="text/x-template" id="tpl-v_ed-binary"><div data-v_ed-binary> Type:{{type}} <a download :href="$store.getters.url">Download</a> {{size}} <hr><img v-if="image" :src="image"></div></script><script type="text/x-template" id="tpl-v_ed-config"><div data-v_ed-config config><p><div style="max-height:200px;overflow-y:scroll;overflow-x:hidden;"><div v-for="i in themes" class="click" :class="{selected: prefs.theme==i}" @click="prefs.theme=i;$store.commit('setPrefs',prefs)">{{i}}</div></div></p><p><div v-for="i in sizes" class="click" :class="{selected: prefs.fontSize==i}" @click="prefs.fontSize=i;$store.commit('setPrefs',prefs)">{{i}}</div></p><p><label><input type="checkbox" v-model="prefs.wrap" @change="$store.commit('setPrefs',prefs)">Wrap</label></p><p><label><input type="checkbox" v-model="prefs.lineNumbers" @change="$store.commit('setPrefs',prefs)">Line Numbers</label></p><p><label><input type="checkbox" v-model="prefs.autoClosePane" @change="$store.commit('setPrefs',prefs)">Auto ClosePane</label></p><center><a href="/_logout" class="button red" style="padding:5px">logout</a><br><br> Version:<br> {{$store.state.VERSION}} </center></div></script><script type="text/x-template" id="tpl-v_ed-editor"><div data-v_ed-editor><slot/></div></script><script type="text/x-template" id="tpl-v_ed-folders"><div data-v_ed-folders folders><div class="click noselect" @click.prevent="$store.commit('switchOpenClose')" @dragover.prevent="mydragover($event)" @mouseup.middle.prevent="open('')" @dragleave.prevent="mydragend($event)" @dragend.prevent="mydragend($event)" @drop.prevent="mydrop(null,$event)" @contextmenu.prevent="pop(null, $event )"><span class="ficon">&#128447;</span>/&nbsp;<span v-if="$store.state.namespace">({{$store.state.namespace}})</span></div><tree :list="$store.getters.liste" :folder="this"></tree><popmenu ref="menu"></popmenu></div></script><script type="text/x-template" id="tpl-v_ed-popmenu"><ul data-v_ed-popmenu id="popmenu" tabindex="-1" ref="popmenu" v-if="menus.length>0" @blur="menus=[]" class="noselect" :style="style"><li v-for="i in menus" @click="caller(i)">{{i.name}}</li></ul></script><script type="text/x-template" id="tpl-v_ed-search"><div data-v_ed-search v-show="show" style="border-bottom:1px solid rgba(0,0,0,0.5)"><button class="click red button" style="position:fixed;right:20px;" @click.prevent="show=false">X</button><form @submit.prevent="search()"><input ref="q" v-model="q" placeholder="search regex"><input v-model="fn" placeholder="files pattern"><button class="button">Search</button><span v-if="list.length>0">{{list.length}} file(s)</span></form><table v-if="list.length>0"><tbody v-for="i in list"><tr v-for="j in i.results" class="click" @click="onselect(i.file,j.pos.y,j.pos.x1)" @mouseup.middle.prevent="onselect(i.file,j.pos.y,j.pos.x1,true)"><td>{{i.file}}</td><td align="right">{{j.pos.y}}</td><td>{{j.line.slice(0,j.pos.x1)}}<b>{{j.line.slice(j.pos.x1,j.pos.x2)}}</b>{{j.line.slice(j.pos.x2)}}</td></tr></tbody></table></div></script><script type="text/x-template" id="tpl-v_ed-tree"><div data-v_ed-tree style="margin-left:4px;"><div v-for="i in list"><div v-if="i.nodes != null"><div @click="onSwitch(i)" @mouseup.middle.prevent="folder.open(i.path+'/')" class="click noselect" @dragover.prevent="folder.mydragover($event)" @dragleave.prevent="folder.mydragend($event)" @dragend.prevent="mydragend($event)" @drop.prevent="folder.mydrop(i,$event)" @contextmenu.prevent="folder.pop(i, $event )"><span class="ficon">&#128447;</span><span><span :class="{'fopen':i.isOpen}">{{i.name}}</span><span v-if="i.isModified">*</span><span v-if="!i.isModified">&nbsp;</span></span></div><tree v-if="i.isOpen" :list="i.nodes" :folder="folder" class="tree"></tree></div></div><div v-for="i in list"><div v-if="i.nodes == null " class="noselect"><span style="white-space: nowrap;" @click.left="folder.selectPath(i.path)" @mouseup.middle.prevent="folder.open(i.path)" class="click" :class="{selected: $store.state.path==i.path}" @contextmenu.prevent="folder.pop(i, $event )"><span v-if="i.admin" style="color:red !important">&#128274;&#xFE0E;</span>{{i.name}}<span v-if="i.isModified">*</span><span v-if="!i.isModified">&nbsp;</span></span></div></div></div></script></head><body><div id="app" :class="$store.state.aedClass"><div id="top" class="backzone"><button ref="btnPane" class="button" @click="$store.commit('togglePane')"><b>pane</b></button><button ref="btnRefresh" v-show="$store.state.path" class="button blue" @click="reload()" title="refresh">refresh</button><button ref="btnDelete" v-show="$store.state.path" class="button red" @click="delFile()" title="delete">delete</button><a>({{$store.state.type}})</a><a v-if="$store.getters.url" :href="$store.getters.url" @click.prevent="setPreview($store.getters.url)" title="Set this as preview (Ctrl-Enter)">{{$store.state.path}}</a><a v-if="!$store.getters.url">{{$store.state.path}}</a><button ref="btnSave" v-show="$store.state.modified" class="button green" @click="save()" title="save">save</button></div><search id="search" class="backzone" ref="search"></search><div id="main"><folders v-show="$store.state.pane==1" class="shrink backzone"></folders><config v-show="$store.state.pane==2" :prefs="$store.state.prefs" class="shrink backzone overhide"></config><editor v-show="$store.getters.isText==true" ref="editor" @onchange="onModified" @onsave="save" @onpreview="setPreviewThis" @onbmchange="onChangeBM" @onbmnext="onGoNextBM" class="expand"></editor><binary v-show="$store.getters.isText==false" class="expand" :content="$store.state.content"></binary></div><div id="bottom" class="backzone"></div><affmsg></affmsg></div><div id="back"></div><script> var $jscomp=$jscomp||{};$jscomp.scope={};$jscomp.arrayIteratorImpl=function(a){var b=0;return function(){return b<a.length?{done:!1,value:a[b++]}:{done:!0}}};$jscomp.arrayIterator=function(a){return{next:$jscomp.arrayIteratorImpl(a)}};$jscomp.makeIterator=function(a){var b="undefined"!=typeof Symbol&&Symbol.iterator&&a[Symbol.iterator];return b?b.call(a):$jscomp.arrayIterator(a)};$jscomp.arrayFromIterator=function(a){for(var b,c=[];!(b=a.next()).done;)c.push(b.value);return c}; $jscomp.arrayFromIterable=function(a){return a instanceof Array?a:$jscomp.arrayFromIterator($jscomp.makeIterator(a))};$jscomp.getGlobal=function(a){return"undefined"!=typeof window&&window===a?a:"undefined"!=typeof global&&null!=global?global:a};$jscomp.global=$jscomp.getGlobal(this);$jscomp.ASSUME_ES5=!1;$jscomp.ASSUME_NO_NATIVE_MAP=!1;$jscomp.ASSUME_NO_NATIVE_SET=!1; $jscomp.defineProperty=$jscomp.ASSUME_ES5||"function"==typeof Object.defineProperties?Object.defineProperty:function(a,b,c){a!=Array.prototype&&a!=Object.prototype&&(a[b]=c.value)};$jscomp.polyfill=function(a,b,c,d){if(b){c=$jscomp.global;a=a.split(".");for(d=0;d<a.length-1;d++){var e=a[d];e in c||(c[e]={});c=c[e]}a=a[a.length-1];d=c[a];b=b(d);b!=d&&null!=b&&$jscomp.defineProperty(c,a,{configurable:!0,writable:!0,value:b})}};$jscomp.FORCE_POLYFILL_PROMISE=!1; $jscomp.polyfill("Promise",function(a){function b(){this.batch_=null}function c(a){return a instanceof e?a:new e(function(b,c){b(a)})}if(a&&!$jscomp.FORCE_POLYFILL_PROMISE)return a;b.prototype.asyncExecute=function(a){null==this.batch_&&(this.batch_=[],this.asyncExecuteBatch_());this.batch_.push(a);return this};b.prototype.asyncExecuteBatch_=function(){var a=this;this.asyncExecuteFunction(function(){a.executeBatch_()})};var d=$jscomp.global.setTimeout;b.prototype.asyncExecuteFunction=function(a){d(a, 0)};b.prototype.executeBatch_=function(){for(;this.batch_&&this.batch_.length;){var a=this.batch_;this.batch_=[];for(var b=0;b<a.length;++b){var c=a[b];a[b]=null;try{c()}catch(n){this.asyncThrow_(n)}}}this.batch_=null};b.prototype.asyncThrow_=function(a){this.asyncExecuteFunction(function(){throw a;})};var e=function(a){this.state_=0;this.result_=void 0;this.onSettledCallbacks_=[];var b=this.createResolveAndReject_();try{a(b.resolve,b.reject)}catch(m){b.reject(m)}};e.prototype.createResolveAndReject_= function(){function a(a){return function(d){c||(c=!0,a.call(b,d))}}var b=this,c=!1;return{resolve:a(this.resolveTo_),reject:a(this.reject_)}};e.prototype.resolveTo_=function(a){if(a===this)this.reject_(new TypeError("A Promise cannot resolve to itself"));else if(a instanceof e)this.settleSameAsPromise_(a);else{a:switch(typeof a){case "object":var b=null!=a;break a;case "function":b=!0;break a;default:b=!1}b?this.resolveToNonPromiseObj_(a):this.fulfill_(a)}};e.prototype.resolveToNonPromiseObj_=function(a){var b= void 0;try{b=a.then}catch(m){this.reject_(m);return}"function"==typeof b?this.settleSameAsThenable_(b,a):this.fulfill_(a)};e.prototype.reject_=function(a){this.settle_(2,a)};e.prototype.fulfill_=function(a){this.settle_(1,a)};e.prototype.settle_=function(a,b){if(0!=this.state_)throw Error("Cannot settle("+a+", "+b+"): Promise already settled in state"+this.state_);this.state_=a;this.result_=b;this.executeOnSettledCallbacks_()};e.prototype.executeOnSettledCallbacks_=function(){if(null!=this.onSettledCallbacks_){for(var a= 0;a<this.onSettledCallbacks_.length;++a)f.asyncExecute(this.onSettledCallbacks_[a]);this.onSettledCallbacks_=null}};var f=new b;e.prototype.settleSameAsPromise_=function(a){var b=this.createResolveAndReject_();a.callWhenSettled_(b.resolve,b.reject)};e.prototype.settleSameAsThenable_=function(a,b){var c=this.createResolveAndReject_();try{a.call(b,c.resolve,c.reject)}catch(n){c.reject(n)}};e.prototype.then=function(a,b){function c(a,b){return"function"==typeof a?function(b){try{d(a(b))}catch(p){f(p)}}: b}var d,f,h=new e(function(a,b){d=a;f=b});this.callWhenSettled_(c(a,d),c(b,f));return h};e.prototype["catch"]=function(a){return this.then(void 0,a)};e.prototype.callWhenSettled_=function(a,b){function c(){switch(d.state_){case 1:a(d.result_);break;case 2:b(d.result_);break;default:throw Error("Unexpected state: "+d.state_);}}var d=this;null==this.onSettledCallbacks_?f.asyncExecute(c):this.onSettledCallbacks_.push(c)};e.resolve=c;e.reject=function(a){return new e(function(b,c){c(a)})};e.race=function(a){return new e(function(b, d){for(var e=$jscomp.makeIterator(a),f=e.next();!f.done;f=e.next())c(f.value).callWhenSettled_(b,d)})};e.all=function(a){var b=$jscomp.makeIterator(a),d=b.next();return d.done?c([]):new e(function(a,e){function f(b){return function(c){h[b]=c;k--;0==k&&a(h)}}var h=[],k=0;do h.push(void 0),k++,c(d.value).callWhenSettled_(f(h.length-1),e),d=b.next();while(!d.done)})};return e},"es6","es3"); $jscomp.polyfill("Promise.prototype.finally",function(a){return a?a:function(a){return this.then(function(b){return Promise.resolve(a()).then(function(){return b})},function(b){return Promise.resolve(a()).then(function(){throw b;})})}},"es9","es3");$jscomp.SYMBOL_PREFIX="jscomp_symbol_";$jscomp.initSymbol=function(){$jscomp.initSymbol=function(){};$jscomp.global.Symbol||($jscomp.global.Symbol=$jscomp.Symbol)}; $jscomp.Symbol=function(){var a=0;return function(b){return $jscomp.SYMBOL_PREFIX+(b||"")+a++}}();$jscomp.initSymbolIterator=function(){$jscomp.initSymbol();var a=$jscomp.global.Symbol.iterator;a||(a=$jscomp.global.Symbol.iterator=$jscomp.global.Symbol("iterator"));"function"!=typeof Array.prototype[a]&&$jscomp.defineProperty(Array.prototype,a,{configurable:!0,writable:!0,value:function(){return $jscomp.iteratorPrototype($jscomp.arrayIteratorImpl(this))}});$jscomp.initSymbolIterator=function(){}}; $jscomp.initSymbolAsyncIterator=function(){$jscomp.initSymbol();var a=$jscomp.global.Symbol.asyncIterator;a||(a=$jscomp.global.Symbol.asyncIterator=$jscomp.global.Symbol("asyncIterator"));$jscomp.initSymbolAsyncIterator=function(){}};$jscomp.iteratorPrototype=function(a){$jscomp.initSymbolIterator();a={next:a};a[$jscomp.global.Symbol.iterator]=function(){return this};return a};$jscomp.underscoreProtoCanBeSet=function(){var a={a:!0},b={};try{return b.__proto__=a,b.a}catch(c){}return!1}; $jscomp.setPrototypeOf="function"==typeof Object.setPrototypeOf?Object.setPrototypeOf:$jscomp.underscoreProtoCanBeSet()?function(a,b){a.__proto__=b;if(a.__proto__!==b)throw new TypeError(a+" is not extensible");return a}:null;$jscomp.generator={};$jscomp.generator.ensureIteratorResultIsObject_=function(a){if(!(a instanceof Object))throw new TypeError("Iterator result "+a+" is not an object");}; $jscomp.generator.Context=function(){this.isRunning_=!1;this.yieldAllIterator_=null;this.yieldResult=void 0;this.nextAddress=1;this.finallyAddress_=this.catchAddress_=0;this.finallyContexts_=this.abruptCompletion_=null};$jscomp.generator.Context.prototype.start_=function(){if(this.isRunning_)throw new TypeError("Generator is already running");this.isRunning_=!0};$jscomp.generator.Context.prototype.stop_=function(){this.isRunning_=!1}; $jscomp.generator.Context.prototype.jumpToErrorHandler_=function(){this.nextAddress=this.catchAddress_||this.finallyAddress_};$jscomp.generator.Context.prototype.next_=function(a){this.yieldResult=a};$jscomp.generator.Context.prototype.throw_=function(a){this.abruptCompletion_={exception:a,isException:!0};this.jumpToErrorHandler_()};$jscomp.generator.Context.prototype["return"]=function(a){this.abruptCompletion_={"return":a};this.nextAddress=this.finallyAddress_}; $jscomp.generator.Context.prototype.jumpThroughFinallyBlocks=function(a){this.abruptCompletion_={jumpTo:a};this.nextAddress=this.finallyAddress_};$jscomp.generator.Context.prototype.yield=function(a,b){this.nextAddress=b;return{value:a}};$jscomp.generator.Context.prototype.yieldAll=function(a,b){var c=$jscomp.makeIterator(a),d=c.next();$jscomp.generator.ensureIteratorResultIsObject_(d);if(d.done)this.yieldResult=d.value,this.nextAddress=b;else return this.yieldAllIterator_=c,this.yield(d.value,b)}; $jscomp.generator.Context.prototype.jumpTo=function(a){this.nextAddress=a};$jscomp.generator.Context.prototype.jumpToEnd=function(){this.nextAddress=0};$jscomp.generator.Context.prototype.setCatchFinallyBlocks=function(a,b){this.catchAddress_=a;void 0!=b&&(this.finallyAddress_=b)};$jscomp.generator.Context.prototype.setFinallyBlock=function(a){this.catchAddress_=0;this.finallyAddress_=a||0};$jscomp.generator.Context.prototype.leaveTryBlock=function(a,b){this.nextAddress=a;this.catchAddress_=b||0}; $jscomp.generator.Context.prototype.enterCatchBlock=function(a){this.catchAddress_=a||0;a=this.abruptCompletion_.exception;this.abruptCompletion_=null;return a};$jscomp.generator.Context.prototype.enterFinallyBlock=function(a,b,c){c?this.finallyContexts_[c]=this.abruptCompletion_:this.finallyContexts_=[this.abruptCompletion_];this.catchAddress_=a||0;this.finallyAddress_=b||0}; $jscomp.generator.Context.prototype.leaveFinallyBlock=function(a,b){var c=this.finallyContexts_.splice(b||0)[0];if(c=this.abruptCompletion_=this.abruptCompletion_||c){if(c.isException)return this.jumpToErrorHandler_();void 0!=c.jumpTo&&this.finallyAddress_<c.jumpTo?(this.nextAddress=c.jumpTo,this.abruptCompletion_=null):this.nextAddress=this.finallyAddress_}else this.nextAddress=a};$jscomp.generator.Context.prototype.forIn=function(a){return new $jscomp.generator.Context.PropertyIterator(a)}; $jscomp.generator.Context.PropertyIterator=function(a){this.object_=a;this.properties_=[];for(var b in a)this.properties_.push(b);this.properties_.reverse()};$jscomp.generator.Context.PropertyIterator.prototype.getNext=function(){for(;0<this.properties_.length;){var a=this.properties_.pop();if(a in this.object_)return a}return null};$jscomp.generator.Engine_=function(a){this.context_=new $jscomp.generator.Context;this.program_=a}; $jscomp.generator.Engine_.prototype.next_=function(a){this.context_.start_();if(this.context_.yieldAllIterator_)return this.yieldAllStep_(this.context_.yieldAllIterator_.next,a,this.context_.next_);this.context_.next_(a);return this.nextStep_()}; $jscomp.generator.Engine_.prototype.return_=function(a){this.context_.start_();var b=this.context_.yieldAllIterator_;if(b)return this.yieldAllStep_("return"in b?b["return"]:function(a){return{value:a,done:!0}},a,this.context_["return"]);this.context_["return"](a);return this.nextStep_()}; $jscomp.generator.Engine_.prototype.throw_=function(a){this.context_.start_();if(this.context_.yieldAllIterator_)return this.yieldAllStep_(this.context_.yieldAllIterator_["throw"],a,this.context_.next_);this.context_.throw_(a);return this.nextStep_()}; $jscomp.generator.Engine_.prototype.yieldAllStep_=function(a,b,c){try{var d=a.call(this.context_.yieldAllIterator_,b);$jscomp.generator.ensureIteratorResultIsObject_(d);if(!d.done)return this.context_.stop_(),d;var e=d.value}catch(f){return this.context_.yieldAllIterator_=null,this.context_.throw_(f),this.nextStep_()}this.context_.yieldAllIterator_=null;c.call(this.context_,e);return this.nextStep_()}; $jscomp.generator.Engine_.prototype.nextStep_=function(){for(;this.context_.nextAddress;)try{var a=this.program_(this.context_);if(a)return this.context_.stop_(),{value:a.value,done:!1}}catch(b){this.context_.yieldResult=void 0,this.context_.throw_(b)}this.context_.stop_();if(this.context_.abruptCompletion_){a=this.context_.abruptCompletion_;this.context_.abruptCompletion_=null;if(a.isException)throw a.exception;return{value:a["return"],done:!0}}return{value:void 0,done:!0}}; $jscomp.generator.Generator_=function(a){this.next=function(b){return a.next_(b)};this["throw"]=function(b){return a.throw_(b)};this["return"]=function(b){return a.return_(b)};$jscomp.initSymbolIterator();this[Symbol.iterator]=function(){return this}};$jscomp.generator.createGenerator=function(a,b){var c=new $jscomp.generator.Generator_(new $jscomp.generator.Engine_(b));$jscomp.setPrototypeOf&&$jscomp.setPrototypeOf(c,a.prototype);return c}; $jscomp.asyncExecutePromiseGenerator=function(a){function b(b){return a.next(b)}function c(b){return a["throw"](b)}return new Promise(function(d,e){function f(a){a.done?d(a.value):Promise.resolve(a.value).then(b,c).then(f,e)}f(a.next())})};$jscomp.asyncExecutePromiseGeneratorFunction=function(a){return $jscomp.asyncExecutePromiseGenerator(a())};$jscomp.asyncExecutePromiseGeneratorProgram=function(a){return $jscomp.asyncExecutePromiseGenerator(new $jscomp.generator.Generator_(new $jscomp.generator.Engine_(a)))}; var affmsg=Vue.component("affmsg",{template:"#tpl-v_ed-affmsg"}),binary=Vue.component("binary",{template:"#tpl-v_ed-binary",props:["content"],computed:{type:function(){return this.content&&this.content.split(";")[0]},size:function(){return this.content&&this.content.length},image:function(){if(this.type&&0==this.type.indexOf("data:image"))return this.content}}}),config=Vue.component("config",{template:"#tpl-v_ed-config",props:["prefs"],created:function(){this.themes="ambiance chaos chrome clouds_midnight clouds cobalt crimson_editor dawn dracula dreamweaver eclipse github gob gruvbox idle_fingers iplastic katzenmilch kr_theme kuroir merbivore_soft merbivore mono_industrial monokai pastel_on_dark solarized_dark solarized_light sqlserver terminal textmate tomorrow_night_blue tomorrow_night_bright tomorrow_night_eighties tomorrow_night tomorrow twilight vibrant_ink xcode".split(" "); this.sizes="7pt 8pt 9pt 10pt 11pt 12pt 13pt".split(" ")}}),editor=Vue.component("editor",{template:"#tpl-v_ed-editor",mounted:function(){ace.config.set("basePath","//cdnjs.cloudflare.com/ajax/libs/ace/1.4.1/");require("ace/ext/language_tools");var a=ace.edit(this.$el);a.$blockScrolling=Infinity;a.resize(!0);var b=a.getSession();a.session.setUseWorker(!1);a.setBehavioursEnabled(!1);a.setOptions({fontFamily:"Roboto Mono",fontSize:"9pt",enableBasicAutocompletion:!0,enableSnippets:!0,enableLiveAutocompletion:!1}); b.setUseSoftTabs(!0);b.setTabSize(4);this.doc=b;this.editor=a;var c=this;b.on("change",function(a){c.$emit("onchange")});b=function(a){a.toggleCommentLines();return!0};var d=function(a){var b=a.getCursorPosition(),d=[];a.session.getBreakpoints().forEach(function(a,b){d.push(b)});0<=d.indexOf(b.row)?a.session.clearBreakpoint(b.row):a.session.setBreakpoint(b.row);d=[];a.session.getBreakpoints().forEach(function(a,b){d.push(b)});c.$emit("onbmchange",d)},e=function(a){a=a.getCursorPosition();c.$emit("onbmnext", a.row)};a.commands.addCommand({name:"myPreview",bindKey:{win:"Ctrl-Return",mac:"Command-Return"},exec:function(a){c.$emit("onpreview")},readOnly:!0});a.commands.addCommand({name:"mySave",bindKey:{win:"Ctrl-S",mac:"Command-S"},exec:function(a){c.$emit("onsave")},readOnly:!0});a.commands.addCommand({name:"myComment",bindKey:{win:"Ctrl-Q",mac:"Command-Q"},exec:b,readOnly:!0});a.commands.addCommand({name:"myComment2",bindKey:{win:"Ctrl-:",mac:"Command-:"},exec:b,readOnly:!0});a.commands.addCommand({name:"go to line", bindKey:{win:"Ctrl-G",mac:"Command-G"},exec:function(a,b){"number"!==typeof b&&(b=parseInt(prompt("Enter line number:"),10));isNaN(b)||a.gotoLine(b)},readOnly:!0});a.commands.addCommand({name:"myDuplicateLine",bindKey:{win:"Ctrl-D",mac:"Command-D"},exec:function(a){a.duplicateSelection()},readOnly:!0});a.commands.addCommand({name:"myDeleteLine",bindKey:{win:"Ctrl-Shift-D",mac:"Command-Shift-D"},exec:function(a){var b=a.getSelectionRange();a.removeLines(b.start.row,b.end.row)},readOnly:!0});a.commands.addCommand({name:"switch python mode/original", bindKey:{win:"Alt-P"},exec:function(a){c.prec?(c.doc.setMode(c.prec),c.$store.dispatch("setMessage","Set ORIGINAL syntax"),c.prec=null):(c.prec=a.session.$modeId,c.$store.dispatch("setMessage","Set PYTHON syntax"),c.doc.setMode("ace/mode/python"))},readOnly:!0});a.commands.addCommand({name:"myBMSave",bindKey:{win:"Ctrl-F2",mac:"Command-F2"},exec:d,readOnly:!0});a.commands.addCommand({name:"myBMNext",bindKey:{win:"F2",mac:"F2"},exec:e,readOnly:!0});a.commands.addCommand({name:"myBMSave2",bindKey:{win:"Ctrl-b", mac:"Command-b"},exec:d,readOnly:!0});a.commands.addCommand({name:"myBMNext2",bindKey:{win:"Ctrl-k",mac:"Command-k"},exec:e,readOnly:!0});a.commands.addCommand({name:"mySearchNext",bindKey:{win:"F3",mac:"F3"},exec:function(a){a.findNext()},readOnly:!0});a.commands.addCommand({name:"mySearchPrevious",bindKey:{win:"Shift-F3",mac:"Command-F3"},exec:function(a){a.findPrevious()},readOnly:!0})},methods:{value:function(a){if(void 0===a)return this.doc.getValue();this.doc.setValue(a);this.editor.focus()}, bookmarks:function(a){var b=this.editor.session;b.clearBreakpoints();a.forEach(function(a){b.setBreakpoint(a)})},theme:function(a){this.editor.setTheme("ace/theme/"+a)},mode:function(a){this.doc.setMode("ace/mode/"+a)},fontSize:function(a){this.editor.setOptions({fontSize:a,fontFamily:"Roboto Mono"})},position:function(a){if(void 0!=a)this.editor.moveCursorToPosition(a),this.editor.scrollToLine(a.row,!0,!0),this.editor.session.selection.clearSelection(),this.editor.focus();else return this.editor.getCursorPosition()}, wrap:function(a){this.editor.session.setUseWrapMode(a)},lineNumbers:function(a){this.editor.renderer.setShowGutter(a)},focus:function(){this.editor.focus()},resize:function(){this.editor.resize()}}}),folders=Vue.component("folders",{template:"#tpl-v_ed-folders",props:[],mounted:function(){this.refresh()},methods:{refresh:function(){var a=getCookieValue("NS");console.log("--- refresh ns=",a,"(",document.cookie,")");this.$store.dispatch("loadFiles",a)},open:function(a){window.open("/"+a)},selectPath:function(a, b){this.$store.dispatch("selectPath",{path:a,pos:b})},addFile:function(a){var b=prompt("name ?"+(a&&" (in: '"+a.path+"/')"||"")+" or 'url|name'");b&&""!=b.trim()&&(b=b.trim(),0==b.indexOf("http:")||0==b.indexOf("https:")?this.$store.dispatch("execFS",{method:"downloadFile",args:{url:b,path:a&&a.path||""}}):(a&&a.path&&(b=[a.path,b].join("/")),this.$store.dispatch("createFile",{path:b,content:""})))},uploadAdd:function(a,b){log("UPLOAD:"+(a&&a.path),b.name);var c=a?[a.path,b.name].join("/"):b.name, d=this,e=new FileReader;e.onload=function(a){d.$store.dispatch("createFile",{path:c,content:target(a).result})};e.readAsDataURL(b)},mydragover:function(a){target(a).classList.add("dropHighlight")},mydragend:function(a){target(a).classList.remove("dropHighlight")},mydrop:function(a,b){target(b).classList.remove("dropHighlight");for(var c=$jscomp.makeIterator(b.dataTransfer.files),d=c.next();!d.done;d=c.next())this.uploadAdd(a,d.value)},pop:function(a,b){function c(a,b){g.$store.dispatch("execFS",{method:a, args:b})}function d(){var b=a.path,d=prompt("Rename file:",b);d&&d.trim()&&d!=b&&c("rename",{old:b,"new":d.trim()})}function e(){c("copy",{old:a.path,"new":a.path+"_2"})}function f(){c("copyFolder",{old:a.path,"new":a.path+"_2"})}function h(){var b=a.path,d=prompt("Rename folder:",b);d&&d.trim()&&d!=b&&c("renameFolder",{old:b,"new":d.trim()})}function k(){confirm("Delete folder '"+a.path+"'")&&c("deleteFolder",{folder:a.path})}function m(){c("zipFolder",{folder:a.path})}function n(){c("unzipFile", {file:a.path})}function r(){confirm("Delete file '"+a.path+"'")&&g.$store.dispatch("del",a.path)}function t(){g.$store.dispatch("toggleAdmin",a)}var g=this;if(null==a){var l=[{name:"Set as preview",callback:function(){g.$store.commit("setPreview","/")}},{name:"Refresh",callback:g.refresh},{name:"Add new file",callback:function(){g.addFile()}},{name:"Search in all",callback:function(){g.$store.commit("popSearch",{path:"*",callback:g.selectPath})}}];if(0<g.$store.state.namespaces.length){l.push({name:"Set default NS", callback:function(){g.$store.dispatch("loadFiles")}});for(var q=$jscomp.makeIterator(g.$store.state.namespaces),p=q.next();!p.done;p=q.next())l.push({name:"Set NS="+p.value,callback:function(a){g.$store.dispatch("loadFiles",a.split("NS=")[1])}})}}else null!=a.nodes?l=[{name:"Set as preview",callback:function(){g.$store.commit("setPreview","/"+a.path+"/")}},{name:"Add new file",callback:function(){g.addFile(a)}},{name:"Rename/move folder",callback:h},{name:"Delete folder",callback:k},{name:"Duplicate folder", callback:f},{name:"Zip folder",callback:m},{name:"Search in folder",callback:function(){g.$store.commit("popSearch",{path:a.path+"/*",callback:g.selectPath})}}]:(l=[{name:"Set as preview",callback:function(){g.$store.commit("setPreview","/"+a.path)}},{name:"Rename/move file",callback:d},{name:"Delete file",callback:r},{name:"Duplicate file",callback:e},{name:"Toggle Admin",callback:t}],a.path.toLowerCase().endsWith(".zip")&&l.push({name:"Unzip here",callback:n}));this.$refs.menu.pop(l,b)}}}),popmenu= Vue.component("popmenu",{template:"#tpl-v_ed-popmenu",data:function(){return{menus:[],style:{top:"0px",left:"0px"}}},methods:{caller:function(a){this.menus=[];this.$forceUpdate();setTimeout(function(){a.callback(a.name)}.bind(this),2)},pop:function(a,b){this.menus=a;Vue.nextTick(function(){this.$refs.popmenu.focus();var a=b.clientY,d=b.clientX,e=window.innerHeight-this.$refs.popmenu.offsetHeight-25,f=window.innerWidth-this.$refs.popmenu.offsetWidth-25;this.style.top=(a>e?e:a)+"px";this.style.left= (d>f?f:d)+"px"}.bind(this))}}}),search=Vue.component("search",{template:"#tpl-v_ed-search",props:[],data:function(){return{show:!1,q:"",fn:"",list:[]}},methods:{popSearch:function(a,b){this.show=!0;this.fn=a;this.callback=b;setTimeout(function(){this.$refs.q.focus()}.bind(this),1)},search:function(){var a=this;this.fn||(this.fn=null);this.$store.dispatch("search",{q:this.q,fn:this.fn}).then(function(b){a.list=b})},onselect:function(a,b,c,d){d&&(this.show=d);this.callback&&this.callback(a,{row:b-1, column:c})}}}),tree=Vue.component("tree",{template:"#tpl-v_ed-tree",props:["list","folder"],methods:{onSwitch:function(a){this.$store.commit("setSwitch",a)}}}),VERSION="**DEV**";function log(a){for(var b=[],c=0;c<arguments.length;++c)b[c-0]=arguments[c];console.log.apply(console,$jscomp.arrayFromIterable(b))} var API="index.py",getCookieValue=function(a){return document.cookie.split("; ").reduce(function(b,c){var d=c.split("=");return d[0]===a?decodeURIComponent(d[1]):b},"")},SettingsService=function(a){var b=function(b){return"CFG_"+a+"_"+b};return{set:function(a,d){localStorage[b(a)]=JSON.stringify(d)},get:function(a,d){d||(d=null);var c=localStorage[b(a)];try{var f=c?JSON.parse(c):d}catch(h){f=d}return f},del:function(a){delete localStorage[b(a)]},setSession:function(a,d){sessionStorage[b(a)]=JSON.stringify(d)}, getSession:function(a,d){d||(d=null);var c=sessionStorage[b(a)];try{var f=c?JSON.parse(c):d}catch(h){f=d}return f},delSession:function(a){delete sessionStorage[b(a)]}}},call_server=function(a,b){document.querySelector("body").classList.add("fetching");var c={method:"POST",body:JSON.stringify(b),credentials:"include",headers:{"Content-type":"application/json; charset=utf-8",Cache:"no-cache",Accept:"application/json"}};return fetch(a,c).then(function(b){return b.json().then(function(b){if(b.error)console.log("SERVER ERROR:", b),alert("Server Error:"+a+":"+b.error);else return b.result})["catch"](function(b){alert("Json Error:"+a+":"+b)})})["catch"](function(b){alert("Fetch Error:"+a+":"+b)})["finally"](function(){document.querySelector("body").classList.remove("fetching")})},SitesService=function(){var a=null,b=null,c={},d="????????????";return{fichiers:function(){return a.slice(0)},admins:function(){return b.slice(0)},namespaces:function(){return namespaces.slice(0)},init:function(c){d=API;log("**(RE)LOAD TREE** ns=", c);return call_server(d+"?all",{all:{}}).then(function(c){a=c.files;b=c.admins;return{namespaces:c.namespaces,files:a}})},get:function(a,b){return c[a]&&void 0===b?new Promise(function(b,d){b(c[a])}):call_server(d+"?get",{get:{id:a}}).then(function(b){return b?(c[a]=b,c[a].ocontent=b.content,c[a]):null})},isModifiedContents:function(){var a=!1;Object.keys(c).forEach(function(b){a=a||c[b].ocontent!=c[b].content});return a},isModifiedContent:function(a){return c[a]?c[a].ocontent!=c[a].content:!1},setModifiedContent:function(a, b){c[a]?c[a].content=b:alert(a+" inconnue ?!?")},set:function(b,f){return call_server(d+"?set",{set:{id:b,content:f}}).then(function(d){-1==a.indexOf(b)&&a.push(b);0==f.indexOf("data:")?delete c[b]:c[b]={content:f,ocontent:f,type:d.fileType};return d.postsave})},del:function(b){return call_server(d+"?del",{del:{id:b}}).then(function(d){d=a.indexOf(b);0<=d&&a.splice(d,1);c[b]&&delete c[b];return!0})},fs:function(c,f){var e={};e[c]=f;return call_server(d+"?"+c,e).then(function(c){return c?(a=c.files, b=c.admins,!0):!1})},toggleAdmin:function(a,c){return call_server(d+"?toggleAdmin",{toggleAdmin:{id:a,admin:c?!0:!1}}).then(function(a){b=a;return!0})},isAdmin:function(a){return 0<=b.indexOf(a)},search:function(a,b){return call_server(d+"?search",{search:{q:a,fn:b}})}}},BMService=function(a){var b=a.getSession("BM_paths",{});return{getBmFile:function(a){return(b[a]||[]).slice(0)},getBmFiles:function(c){Object.keys(b).forEach(function(a){0>c.indexOf(a)&&delete b[a]});a.setSession("BM_paths",b);return Object.keys(b)}, delBmFile:function(c){b[c]&&delete b[c];a.setSession("BM_paths",b)},setBmFile:function(c,d){0<d.length?(b[c]=d,a.setSession("BM_paths",b)):this.delBmFile(c)}}},target=function(a){return a.target?a.target:a.relatedTarget?a.relatedTarget:a.originalTarget},CFG=new SettingsService("Ed"),BM=new BMService(CFG),SS=new SitesService,mystore=new Vuex.Store({state:{VERSION:VERSION,preview:null,aedClass:"",namespace:"",namespaces:[],prefs:CFG.get("prefs",{theme:"xcode",fontSize:"10pt",wrap:!1,lineNumbers:!0, autoClosePane:!1}),pane:1,type:"text/plain",path:CFG.get("path",null),content:"",modified:!1,message:"",files:[],openStates:{},openStatesBackup:null},getters:{url:function(a){return a.path?"/"+a.path:""},isText:function(a){return null==a.content?null:a.type&&0<=a.type.toLowerCase().indexOf("text/")},liste:function(a){function b(c,d,e){if(0!==c.length){for(var f=0;f<d.length;f++)if(c[0]==d[f].name&&null!=d[f].nodes){e=e?[e,c[0]].join("/"):c[0];b(c.splice(1,c.length),d[f].nodes,e);return}e=e?[e,c[0]].join("/"): c[0];Vue.set(a.openStates,e,a.openStates[e]|(a.path&&0==a.path.indexOf(e+"/")));f={name:c[0],nodes:1<c.length?[]:null,path:e,isModified:SS.isModifiedContent(e),isOpen:a.openStates[e],admin:SS.isAdmin(e)};d.push(f);b(c.splice(1,c.length),f.nodes,e)}}for(var c=[],d=0;d<a.files.length;d++)c.push(a.files[d]);c.sort(function(a,b){return a.toLowerCase().localeCompare(b.toLowerCase())});var e=[];for(d=0;d<c.length;d++)b(c[d].split("/"),e,null);return e}},mutations:{setMessage:function(a,b){(a.message=b)&& setTimeout(function(){a.message=""},3E3)},setFiles:function(a,b){log("COMMIT setFiles",b.length);a.files=b},refreshFiles:function(a){log("COMMIT refreshFiles");a.files=SS.fichiers()},setPath:function(a,b){log("COMMIT path",b);a.path=b},setLowResolution:function(a){log("COMMIT setLowResolution");a.prefs.lineNumbers=!1;a.prefs.autoClosePane=!0;a.aedClass="small";Vue.prototype.$editor.lineNumbers(a.prefs.lineNumbers)},setPrefs:function(a,b){log("COMMIT prefs",b);b&&(Vue.set(a,"prefs",b),CFG.set("prefs", b));var c="ace-"+a.prefs.theme.replace(/_/g,"-");document.getElementsByTagName("body")[0].className=c;Vue.prototype.$editor.theme(a.prefs.theme);Vue.prototype.$editor.fontSize(a.prefs.fontSize);Vue.prototype.$editor.wrap(a.prefs.wrap);Vue.prototype.$editor.lineNumbers(a.prefs.lineNumbers)},setSwitch:function(a,b){log("COMMIT switch",b.path);b.isOpen=!b.isOpen;a.openStatesBackup=null;Vue.set(a.openStates,b.path,b.isOpen)},switchOpenClose:function(a){log("COMMIT switchOpenClose");null==a.openStatesBackup? (a.openStatesBackup={},Object.assign(a.openStatesBackup,a.openStates),a.openStates={}):(Object.assign(a.openStates,a.openStatesBackup),a.openStatesBackup=null)},togglePane:function(a){log("COMMIT togglePane");a.pane=(a.pane+1)%3},checkIfModified:function(a){log("COMMIT checkIfModified");a.modified=SS.isModifiedContent(a.path)},select:function(a,b){log("COMMIT select",b?b.path+" ("+b.type+") pos:"+b.pos:"nothing");var c=Vue.prototype.$editor;a.prefs.autoClosePane&&(a.pane=0);b?(a.type=b.type,a.path= b.path,a.content=b.content):(a.type="",a.path="",a.content=null);a.modified=!1;CFG.set("path",a.path);document.title="[A3D] "+a.path;Vue.nextTick(function(){if(c){c.value(a.content);c.bookmarks(BM.getBmFile(a.path));c.mode(a.type.split("/")[1]);var d=void 0===b.pos?CFG.get(a.path,{row:0,column:0}):b.pos;c.position(d)}})},setPreview:function(a,b){log("COMMIT setPreview",b);if(a.wpreview&&a.wpreview.location&&a.wpreview.location.reload){log("set active preview window, with "+b);a.wpreview.location.href= b;var c=a.wpreview;setTimeout(function(){c.document.title="*PREVIEW*"},100)}else log("no active preview window, open "+b),a.wpreview=window.open(b),a.wpreview.onload=function(){this.document.title="*PREVIEW*"}},refreshPreview:function(a){log("COMMIT refreshPreview");a.wpreview&&a.wpreview.location&&a.wpreview.location.reload&&(a.wpreview.location.reload(),a.wpreview.document.title="*PREVIEW*",a.wpreview.onload=function(){this.document.title="*PREVIEW*"})},popSearch:function(a,b){log("COMMIT popSearch", b);Vue.prototype.$search.popSearch(b.path,b.callback)},setBookmarkThis:function(a,b){log("COMMIT setBookmarkThis",b);BM.setBmFile(a.path,b)}},actions:{savePos:function(a){var b=Vue.prototype.$editor;a.getters.isText&&a.state.path&&a.state.content&&b&&CFG.set(a.state.path,b.position())},setMessage:function(a,b){return $jscomp.asyncExecutePromiseGeneratorProgram(function(c){a.commit("setMessage",b);c.jumpToEnd()})},selectPathReload:function(a){var b;return $jscomp.asyncExecutePromiseGeneratorProgram(function(c){if(1== c.nextAddress)return log("ACTION selectPathReload"),a.dispatch("savePos"),c.yield(SS.get(a.state.path,!0),2);b=c.yieldResult;a.commit("select",{type:b.type,path:a.state.path,content:b.content});c.jumpToEnd()})},selectPath:function(a,b){var c;return $jscomp.asyncExecutePromiseGeneratorProgram(function(d){if(1==d.nextAddress)return log("ACTION selectPath",b),a.dispatch("savePos"),d.yield(SS.get(b.path),2);c=d.yieldResult;a.commit("select",{type:c.type,path:b.path,content:c.content,pos:b.pos});d.jumpToEnd()})}, createFile:function(a,b){return $jscomp.asyncExecutePromiseGeneratorProgram(function(c){if(1==c.nextAddress)return log("ACTION createFile",b.path),c.yield(SS.set(b.path,b.content),2);a.commit("refreshFiles");a.dispatch("selectPath",{path:b.path,pos:null});c.jumpToEnd()})},save:function(a){var b,c;return $jscomp.asyncExecutePromiseGeneratorProgram(function(d){if(1==d.nextAddress)return log("ACTION save"),b=Vue.prototype.$editor.value(),d.yield(SS.set(a.state.path,b,a.state.type),2);c=d.yieldResult; a.dispatch("setMessage",c);a.commit("checkIfModified");a.commit("refreshPreview");a.commit("refreshFiles");Vue.prototype.$editor.focus();d.jumpToEnd()})},del:function(a,b){return $jscomp.asyncExecutePromiseGeneratorProgram(function(c){switch(c.nextAddress){case 1:return log("ACTION del",b||"current"),b?c.yield(SS.del(b),5):c.yield(SS.del(a.state.path),4);case 4:BM.delBmFile(a.state.path);a.commit("select",null);c.jumpTo(3);break;case 5:BM.delBmFile(b),b==a.state.path&&a.commit("select",null);case 3:a.commit("refreshFiles"), c.jumpToEnd()}})},onModified:function(a){log("ACTION onModified");a.state.path&&(SS.setModifiedContent(a.state.path,Vue.prototype.$editor.value()),a.commit("checkIfModified"),a.commit("refreshFiles"))},loadFiles:function(a,b){var c;return $jscomp.asyncExecutePromiseGeneratorProgram(function(d){if(1==d.nextAddress)return void 0==b&&(b=""),b=b.trim(),log("ACTION loadFiles, ns=",b),a.state.namespace=b,document.cookie="NS="+b+"; path=/",d.yield(SS.init(b),2);c=d.yieldResult;a.state.namespaces=c.namespaces; a.commit("setFiles",c.files);a.state.path&&0<=c.files.indexOf(a.state.path)&&a.dispatch("selectPath",{path:a.state.path});d.jumpToEnd()})},goNextBookmark:function(a,b){function c(a,b){return a-b}var d,e,f,h;return $jscomp.asyncExecutePromiseGeneratorProgram(function(k){log("ACTION goNextBookmark",b);d=BM.getBmFile(a.state.path);0>d.indexOf(b)&&d.push(b);d=d.sort(c);e=d.indexOf(b);e+=1;if(d[e])return Vue.prototype.$editor.position({row:d[e],col:0}),k.jumpTo(0);f=BM.getBmFiles(SS.fichiers());if(!(0< f.length))return k.jumpTo(0);e=f.indexOf(a.state.path);e=0<=e?(e+1)%f.length:0;h=f[e];d=BM.getBmFile(h);return k.yield(a.dispatch("selectPath",{path:h,pos:{row:d[0],column:0}}),0)})},execFS:function(a,b){var c;return $jscomp.asyncExecutePromiseGeneratorProgram(function(d){if(1==d.nextAddress)return log("ACTION execFS",b.method),d.yield(SS.fs(b.method,b.args),2);if(c=d.yieldResult)a.commit("refreshFiles"),a.dispatch("setMessage",b.method+": OK");d.jumpToEnd()})},search:function(a,b){return $jscomp.asyncExecutePromiseGeneratorProgram(function(a){return 1== a.nextAddress?(log("ACTION search",b),a.yield(SS.search(b.q,b.fn),2)):a["return"](a.yieldResult)})},toggleAdmin:function(a,b){var c;return $jscomp.asyncExecutePromiseGeneratorProgram(function(d){if(1==d.nextAddress)return log("ACTION toggleAdmin",b.path),d.yield(SS.toggleAdmin(b.path,!b.admin),2);if(c=d.yieldResult)b.admin=!b.admin,a.commit("refreshFiles");d.jumpToEnd()})}}}),app=new Vue({el:"#app",store:mystore,mounted:function(){Vue.prototype.$editor=this.$refs.editor;Vue.prototype.$search=this.$refs.search; this.$store.commit("setPrefs");500>(window.innerWidth||document.documentElement.clientWidth||document.body.clientWidth)&&(this.$store.commit("setLowResolution"),this.$refs.btnDelete.innerHTML="&#10060;",this.$refs.btnRefresh.innerHTML="&#x21bb;",this.$refs.btnSave.innerHTML="&#128190;",this.$refs.btnPane.innerHTML="&#9776;")},methods:{onModified:function(){this.$store.dispatch("onModified")},setPreviewThis:function(){this.$store.commit("setPreview",this.$store.getters.url)},setPreview:function(a){this.$store.commit("setPreview", a)},save:function(){this.$store.dispatch("save")},delFile:function(){confirm("Delete this file '"+this.$store.state.path+"' ?")&&this.$store.dispatch("del")},onChangeBM:function(a){this.$store.commit("setBookmarkThis",a)},onGoNextBM:function(a){this.$store.dispatch("goNextBookmark",a)},reload:function(){this.$store.dispatch("selectPathReload")}}});window.onbeforeunload=function(){if(SS.isModifiedContents())return"Are you sure you want to navigate away from this page?"}; </script></body></html>"""
+        h=h.replace('**DEV**',__version__)
+        h=h.replace('var API="index.py"','var API="/'+__file__+'"'); # fait pointer vers lui meme !
+        return h
+
+
+

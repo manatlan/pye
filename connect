@@ -1,0 +1,2 @@
+#!/bin/sh
+sudo docker run -p 12345:8080 -v $PWD/files:/app/files -it pye sh

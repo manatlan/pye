@@ -1,0 +1,3 @@
+import json
+web.response.content_type="text/plain"
+print( json.dumps( dict(web.request.headers), sort_keys=True, indent=4) )

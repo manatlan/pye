@@ -1,0 +1,22 @@
+if argv==["create"]:
+    web.response.set_cookie("cpt",0)
+    return "create"
+elif argv==["inc"]:
+    cpt=int(web.request.get_cookie("cpt",-1))
+    if cpt>=0:
+        web.response.set_cookie("cpt",cpt+1)
+        return "inc"
+    else:
+        return "no"
+elif argv==["view"]:
+    cpt=int(web.request.get_cookie("cpt",-1))
+    if cpt>=0:
+        return str(cpt)
+    else:
+        return "no"
+elif argv==["del"]:
+    web.response.delete_cookie("cpt")
+    return "del"
+else:
+    return "nope"
+
