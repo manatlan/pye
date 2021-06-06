@@ -2,13 +2,13 @@
 
 ## It's out ;-)
 
-As a docker image !
+As a [docker image](https://hub.docker.com/r/manatlan/pye) !
 
 **pye** is basically a "web editor" to dev "web things" (with python3) online. It's a ASGI thing, using uvloop+gunicorn. (it's between [appJet](https://en.wikipedia.org/wiki/AppJet) and [glitch.com](https://glitch.com) .... focused on python3/async, see at the bottom)
 
 Unittests(97%cov) + docs will come later
 
-### Using docker-hub image :
+### Using [docker-hub image]((https://hub.docker.com/r/manatlan/pye)) :
 
 #### Just try
 
@@ -26,7 +26,7 @@ You should create a [files](https://github.com/manatlan/pye/tree/master/files) f
 In this case, all modifications will be in your filesystem. A lot better ;-)
 
 
-### Using the Dockerfile / github repo
+### Using the Dockerfile / [github repo](https://github.com/manatlan/pye)
 
 
 #### to build :
