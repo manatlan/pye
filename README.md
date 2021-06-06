@@ -4,32 +4,32 @@
 
 As a docker image !
 
-**pye** is basically a "web editor" to make "web things" online.
+**pye** is basically a "web editor" to dev "web things" (with python3) online. It's a ASGI thing, using uvloop+gunicorn. (it's between [appJet](https://en.wikipedia.org/wiki/AppJet) and [glitch.com](https://glitch.com) .... focused on python3/async, see at the bottom)
 
-Unittests + docs will come later
+Unittests(97%cov) + docs will come later
 
 ### Using docker-hub image :
 
 #### Just try
 
-sudo docker run -p 8111:8080 -e PYEPASS=test -e WORKER=1 manatlan/pye
+    sudo docker run -p 8111:8080 -e PYEPASS=test -e WORKER=1 manatlan/pye
 
 And go to [http://localhost:8111/ed](http://localhost:8111/ed), enter "test"+RETURN, you are in the editor/admin place, and
 can do all what you want. But keep in mind, that everything you edit/create will disapear after stoping the instance.
 
 #### Go further
 
-sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> manatlan/pye
+    sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> manatlan/pye
 
 
 ### Using the Dockerfile / github repo
 
 
-#### TO BUILD :
+#### to build :
 
     ./build
 
-#### TO TEST :
+#### to test :
 
     ./run
 
@@ -39,12 +39,12 @@ sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYE
         - http://localhost:12345/ed  (with pass "test")
 
 
-#### TO USE IN PRODUCTION :
+#### to use in production :
 
     sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> pye
 
 
-#### TO CONNECT to the container :
+#### to visit the container :
 
     ./connect
 
