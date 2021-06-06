@@ -2,19 +2,34 @@
 
 ## It's out ;-)
 
-Due to the complexity of setuping all, **pye** was never released before ;-)
+As a docker image !
 
-But with the facility of docker : I reach to make something that is (pretty) usable (in prod too) ;-)
+**pye** is basically a "web editor" to make "web things" online.
 
-**Currently**, it's just the DockerFile with the pye's app -> it's the github account,
-to build the docker's image ! But the image will be available in the docker-hub too,
-and I will make more docs and add all my code coverage tests (97%) ... and some docs ;-)
+Unittests + docs will come later
 
-### TO BUILD :
+### Using docker-hub image :
+
+#### Just try
+
+sudo docker run -p 8111:8080 -e PYEPASS=test -e WORKER=1 manatlan/pye
+
+And go to [http://localhost:8111/ed](http://localhost:8111/ed), enter "test"+RETURN, you are in the editor/admin place, and
+can do all what you want. But keep in mind, that everything you edit/create will disapear after stoping the instance.
+
+#### Go further
+
+sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> manatlan/pye
+
+
+### Using the Dockerfile / github repo
+
+
+#### TO BUILD :
 
     ./build
 
-### TO TEST :
+#### TO TEST :
 
     ./run
 
@@ -24,12 +39,12 @@ and I will make more docs and add all my code coverage tests (97%) ... and some 
         - http://localhost:12345/ed  (with pass "test")
 
 
-### TO USE IN PRODUCTION :
+#### TO USE IN PRODUCTION :
 
     sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> pye
 
 
-### TO CONNECT to the container :
+#### TO CONNECT to the container :
 
     ./connect
 
