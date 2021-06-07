@@ -41,7 +41,11 @@ def fillFilesFolder():
     """ mechanism to fill the 'files/' folder with some default files
         (like 'ed' ... which can be useful ootb ;-)
     """
-    files = os.listdir("files")
+    if os.path.isdir("files"):
+        files = os.listdir("files")
+    else:
+        os.makedirs("files/")
+        files=[]
     if not files:
         shutil.copytree("files_default/","files/",dirs_exist_ok=True)
         print("* Fill 'files/' folder with defaults one")
