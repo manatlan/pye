@@ -1,0 +1,81 @@
+<html>
+<head>
+  <title>Pye's Tutorial</title>
+  <base target="_test">
+  <style>
+  </style>
+
+
+  <template id="tutoView.tpl">
+    <style>
+      .wrapper {
+        background: #CFC;
+        padding: 4px;
+        margin: 4px;
+        border-radius: 10px;
+      }
+
+      .wrapper iframe {
+        width: 100%;
+        height: 40px;
+        border: 2px dotted #888;
+      }
+    </style>
+    <div class='wrapper'>
+      See <a></a>
+      <slot name="more"></slot>
+      <iframe></iframe>
+    </div>
+  </template>
+
+  <script>
+    class TutoView extends HTMLElement {
+      constructor() {
+        super();
+        const shadow = this.attachShadow({ mode: 'open' });
+        shadow.appendChild(document.getElementById("tutoView.tpl").content.cloneNode(true));
+      }
+      connectedCallback() {
+        let info = this.getAttribute('info');
+        this.shadowRoot.querySelector('iframe').src = "/tuto/view?file="+info;
+        this.shadowRoot.querySelector('a').innerHTML = info;
+        this.shadowRoot.querySelector('a').href = info;
+      }
+    }
+
+    window.customElements.define('tuto-view', TutoView);
+  </script>
+</head>
+
+<body>
+  <h1>Welcome</h1>
+
+
+  <p>Welcome to Pye (<b>PY</b>thon <b>E</b>ngine)</p>
+  <p>
+    You are on an html page server by pye, which will explain you
+    the main concepts of the pye ! This is the <i>index.html</i> which
+    is a static html page, and server "as is" by the pye !
+  </p>
+  <p>
+    All files ended with a known extension (.html, .htm, .js, .png, etc ...) are rendered as is; it's some static content !
+  </p>
+  <p>
+    All others files are python interpreted content ! Here are 3 python file which are able to render contents
+
+    <tuto-view info="tuto/simple1">
+      <span slot="more">yo it's marvelous</span>
+    </tuto-view>
+    <tuto-view info="tuto/simple2">
+    </tuto-view>
+    <tuto-view info="tuto/simple3">
+    </tuto-view>
+
+    ...
+    TO BE CONTINUED ....
+  </p>
+
+  <a href="/edit" target="_ed">Edit'or</a>
+</body>
+
+</html>

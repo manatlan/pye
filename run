@@ -1,2 +1,3 @@
 #!/bin/sh
-sudo docker run -p 12345:8080 -v $PWD/files:/app/files -e PYEPASS=test -e WORKER=2 pye
+
+sudo docker run -p 12345:8080 -v $PWD/YOUR_FILES_FOLDER:/app/files -e PYEPASS=test -e PYEWORKER=2 pye

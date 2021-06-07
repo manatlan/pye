@@ -1,0 +1,13 @@
+# this file is a potential security's holde, coz it permits to view content file
+# without admin right !!! (you should avoid this !!!)
+
+f= web.request.GET.get("file")
+
+#---------------------------------------------
+db=Files() #<- this is a "poor api" to access files (which works on gae or outside)
+content=db.get(f)["content"]
+#---------------------------------------------
+
+
+web.response.content_type="text/plain"
+return content

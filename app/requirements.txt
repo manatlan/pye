@@ -1,5 +1,5 @@
 pycryptodome
-google-cloud-datastore
+#google-cloud-datastore #for hosting on GAE, it's needed
 starlette
 fastapi
 gunicorn

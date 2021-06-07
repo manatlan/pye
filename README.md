@@ -12,18 +12,17 @@ Unittests(97%cov) + docs will come later
 
 #### Just try
 
-    sudo docker run -p 8111:8080 -e PYEPASS=test -e WORKER=1 manatlan/pye
+    sudo docker run -p 8111:8080 -e PYEPASS=test -e PYEWORKER=1 manatlan/pye
 
 And go to [http://localhost:8111/ed](http://localhost:8111/ed), enter "test"+RETURN, you are in the editor/admin place, and
 can do all what you want. But keep in mind, that everything you edit/create will disapear after stoping the instance.
 
 #### Go further, IRL
 
-You should create a [files](https://github.com/manatlan/pye/tree/master/files) folder, and use it with this command:
+    sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e PYEWORKER=<<YOUR_NB_OF_WORKERS>> manatlan/pye
 
-    sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> manatlan/pye
-
-In this case, all modifications will be in your filesystem. A lot better ;-)
+If "YOUR_FILES_FOLDER" folder is empty, first run will fill it with defaults one (tutorial + edit'or + tests)
+In this case, all modifications will be in your filesystem. It's a lot better ;-)
 
 
 ### Using the Dockerfile / [github repo](https://github.com/manatlan/pye)
