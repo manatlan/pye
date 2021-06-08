@@ -21,4 +21,4 @@ WORKDIR /app
 
 # Set default runner
 # ========================================================
-CMD     python3 initpye.py $PYEPASS && unset PYEPASS && /usr/bin/gunicorn -w $PYEWORKER -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080 --preload main:app
+CMD     python3 initpye.py $PYEPASS && unset PYEPASS && /usr/bin/gunicorn -w $PYEWORKERS -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080 --preload main:app
