@@ -39,7 +39,7 @@ In this case, all modifications will be in your filesystem. It's a lot better ;-
     And you can surf to :
 
         - http://localhost:12345/
-        - http://localhost:12345/ed  (with pass "test")
+        - http://localhost:12345/edit  (with pass "test")
 
 
 #### to use in production :
