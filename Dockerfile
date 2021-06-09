@@ -1,7 +1,7 @@
 
 FROM    alpine:latest
 
-ENV     PYEFOLDER=/app
+ARG     PYEFOLDER=/app
 
 # Install Pye'app
 # ========================================================
