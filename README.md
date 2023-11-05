@@ -44,7 +44,7 @@ In this case, all modifications will be in your filesystem. It's a lot better ;-
 
 #### to use in production :
 
-    sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e WORKER=<<YOUR_NB_OF_WORKERS>> pye
+    sudo docker run -p <<YOUR_PORT>>:8080 -v <<YOUR_FILES_FOLDER>>:/app/files -e PYEPASS=<<YOUR_PASSWORD>> -e PYEWORKERS=<<YOUR_NB_OF_WORKERS>> pye
 
 
 #### to visit the container :
